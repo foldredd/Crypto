@@ -55,5 +55,12 @@ namespace TestAssignment.Data
 
         // Властивість Image представляє URL-адресу зображення криптовалюти.
         public string Image { get; set; }
+
+        public string SymbolDisplay => (Symbol ?? string.Empty).ToUpperInvariant();
+        public string PriceDisplay => Current_price < 1m
+            ? Current_price.ToString("$0.########", CultureInfo.InvariantCulture)
+            : Current_price.ToString("$#,##0.00", CultureInfo.InvariantCulture);
+        public string PriceChangeDisplay => price_change_percentage_24h.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%";
+        public string RankDisplay => "№ " + Market_cap_rank.ToString(CultureInfo.InvariantCulture);
     }
 }

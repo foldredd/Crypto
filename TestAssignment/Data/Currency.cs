@@ -1,45 +1,59 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Newtonsoft.Json;
+using System.Globalization;
 
 namespace TestAssignment.Data
 {
-    // Клас, який представляє криптовалюту.
     public class Currency
     {
-        // Конструктор класу, який приймає різні параметри та ініціалізує властивості об'єкта Currency.
-        public Currency(string Id, string Symbol)
+        public Currency() { }
+
+        public Currency(string id, string symbol, string name)
         {
-            this.Id = Id;
-            this.Symbol = Symbol;
+            Id = id;
+            Symbol = symbol;
+            Name = name;
         }
 
-        public string Market_cap_string { get; set; }
-        public string Total_volume_string { get; set; }
-        // Властивість Id представляє унікальний ідентифікатор криптовалюти.
+        [JsonProperty("id")]
         public string Id { get; set; }
-
-        // Властивість Symbol представляє символьний код криптовалюти.
+        [JsonProperty("symbol")]
         public string Symbol { get; set; }
-
-        // Властивість Name представляє назву криптовалюти.
+        [JsonProperty("name")]
         public string Name { get; set; }
-
-        // Властивість Current_price представляє поточну ціну криптовалюти.
+        [JsonProperty("current_price")]
         public decimal Current_price { get; set; }
-
-        // Властивість Market_cap_rank представляє рейтинг криптовалюти за розміром ринкової капіталізації.
+        [JsonProperty("market_cap_rank")]
         public int Market_cap_rank { get; set; }
-
-        // Властивість Market_cap представляє ринкову капіталізацію криптовалюти.
+        [JsonProperty("market_cap")]
         public decimal Market_cap { get; set; }
-
-        // Властивість Total_volume представляє загальний обсяг торгів криптовалюти.
+        [JsonProperty("total_volume")]
         public decimal Total_volume { get; set; }
-
-        // Властивість Image представляє URL-адресу зображення криптовалюти.
+        [JsonProperty("image")]
         public string Image { get; set; }
+        [JsonProperty("price_change_percentage_24h")]
+        public decimal? PriceChangePercentage24h { get; set; }
+
+        [JsonIgnore]
+        public string SymbolDisplay => (Symbol ?? string.Empty).ToUpperInvariant();
+        [JsonIgnore]
+        public string PriceDisplay => Current_price < 1m
+            ? Current_price.ToString("$0.########", CultureInfo.InvariantCulture)
+            : Current_price.ToString("$#,##0.00", CultureInfo.InvariantCulture);
+        [JsonIgnore]
+        public string MarketCapDisplay => FormatCompact(Market_cap);
+        [JsonIgnore]
+        public string VolumeDisplay => FormatCompact(Total_volume);
+        [JsonIgnore]
+        public string ChangeDisplay => PriceChangePercentage24h.HasValue
+            ? PriceChangePercentage24h.Value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%"
+            : "—";
+
+        private static string FormatCompact(decimal value)
+        {
+            if (value >= 1000000000000m) return (value / 1000000000000m).ToString("0.00", CultureInfo.InvariantCulture) + " трлн";
+            if (value >= 1000000000m) return (value / 1000000000m).ToString("0.00", CultureInfo.InvariantCulture) + " млрд";
+            if (value >= 1000000m) return (value / 1000000m).ToString("0.00", CultureInfo.InvariantCulture) + " млн";
+            return value.ToString("#,##0", CultureInfo.InvariantCulture);
+        }
     }
 }

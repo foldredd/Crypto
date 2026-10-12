@@ -1,0 +1,17 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Restore packages
+        run: msbuild TestAssignment.sln /t:Restore /p:Platform=x64
+      - name: Build
+        run: msbuild TestAssignment.sln /t:Build /p:Configuration=Release /p:Platform=x64 /p:AppxPackageSigningEnabled=false

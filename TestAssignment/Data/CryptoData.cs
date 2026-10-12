@@ -1,147 +1,163 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Globalization;
-using System.Linq;
+using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
-
-using Windows.UI.Xaml.Shapes;
-
 
 namespace TestAssignment.Data
 {
-    //Клас який використовується для зв'язку з API
-    public class CryptoData
+    public static class CryptoData
     {
-        //Посилання на API
-        private const string ApiBaseUrl = "https://api.coingecko.com/api/v3";
-
-        /*Цей метод використвується для  десеріалізації відповіді від сайту  coingecko.com
-         * на запрос який повинен повертати топ-10 криптовалют  */
-        public static async Task<ObservableCollection<Currency>> GetCryptListAsync()
+        private const int MaxResponseCharacters = 2 * 1024 * 1024;
+        private static readonly Uri ApiBaseUri = new Uri("https://api.coingecko.com/api/v3/");
+        private static readonly Regex CoinIdPattern = new Regex("^[a-z0-9-]{1,100}$", RegexOptions.Compiled);
+        private static readonly Regex CurrencyCodePattern = new Regex("^[a-z]{3,5}$", RegexOptions.Compiled);
+        private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
         {
-            using (HttpClient client = new HttpClient())
+            TypeNameHandling = TypeNameHandling.None,
+            MaxDepth = 32,
+            DateParseHandling = DateParseHandling.None,
+            MissingMemberHandling = MissingMemberHandling.Ignore
+        };
+        private static readonly HttpClient Client = CreateClient();
+
+        private static HttpClient CreateClient()
+        {
+            var client = new HttpClient
             {
-                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                //Рядок запросу на топ-10 криптовалют
-                 string apiUrl = $"{ApiBaseUrl}/coins/markets?vs_currency=usd&ids=&order=market_cap_desc&per_page=10&page=1&sparkline=false&locale=en";
-                
-                HttpResponseMessage response = await client.GetAsync(apiUrl);
-                //Якщо запрос успішний ми десералізуємо JSON формат у коллекцію об'єктів Crypt
-                if (response.IsSuccessStatusCode)
+                BaseAddress = ApiBaseUri,
+                Timeout = TimeSpan.FromSeconds(15)
+            };
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CryptoDashboard/1.0");
+            return client;
+        }
+
+        public static async Task<ObservableCollection<Currency>> GetCryptListAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var currencies = await GetJsonAsync<List<Currency>>(
+                "coins/markets?vs_currency=usd&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=24h",
+                cancellationToken);
+            return new ObservableCollection<Currency>(currencies ?? new List<Currency>());
+        }
+
+        public static async Task<ObservableCollection<Currency>> GetAllCryptAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var currencies = await GetJsonAsync<List<Currency>>(
+                "coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false&price_change_percentage=24h",
+                cancellationToken);
+            return new ObservableCollection<Currency>(currencies ?? new List<Currency>());
+        }
+
+        public static async Task<decimal> ConvertCryptAsync(string coinId, string targetCurrency, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ValidateCoinId(coinId);
+            ValidateCurrencyCode(targetCurrency);
+            string path = "simple/price?ids=" + Uri.EscapeDataString(coinId) +
+                          "&vs_currencies=" + Uri.EscapeDataString(targetCurrency);
+            var result = await GetJsonAsync<Dictionary<string, Dictionary<string, decimal>>>(path, cancellationToken);
+
+            Dictionary<string, decimal> prices;
+            decimal price;
+            if (result == null || !result.TryGetValue(coinId, out prices) || !prices.TryGetValue(targetCurrency, out price))
+            {
+                throw new InvalidOperationException("Сервис не вернул курс для выбранной пары.");
+            }
+            return price;
+        }
+
+        public static Task<PriceData> GetHistoryPriceForOneDayAsync(string coinId, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ValidateCoinId(coinId);
+            string path = "coins/" + Uri.EscapeDataString(coinId) + "/market_chart?vs_currency=usd&days=1&interval=hourly";
+            return GetJsonAsync<PriceData>(path, cancellationToken);
+        }
+
+        public static async Task<decimal> GetPriceChangeAsync(string coinId, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            ValidateCoinId(coinId);
+            string path = "simple/price?ids=" + Uri.EscapeDataString(coinId) + "&vs_currencies=usd&include_24hr_change=true";
+            var result = await GetJsonAsync<Dictionary<string, Dictionary<string, decimal?>>>(path, cancellationToken);
+
+            Dictionary<string, decimal?> values;
+            decimal? change;
+            if (result != null && result.TryGetValue(coinId, out values) &&
+                values.TryGetValue("usd_24h_change", out change) && change.HasValue)
+            {
+                return change.Value;
+            }
+            return 0m;
+        }
+
+        private static async Task<T> GetJsonAsync<T>(string relativePath, CancellationToken cancellationToken)
+        {
+            using (var request = new HttpRequestMessage(HttpMethod.Get, relativePath))
+            using (HttpResponseMessage response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+            {
+                if (!response.IsSuccessStatusCode)
                 {
-                    string jsonResponse = await response.Content.ReadAsStringAsync();
-                    ObservableCollection<Currency> crypts = JsonConvert.DeserializeObject<ObservableCollection<Currency>>(jsonResponse);
-                    foreach (Currency currency in crypts)
+                    throw new HttpRequestException("CoinGecko вернул ошибку " + (int)response.StatusCode + ".");
+                }
+                if (response.Content.Headers.ContentType == null ||
+                    !string.Equals(response.Content.Headers.ContentType.MediaType, "application/json", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("Сервис вернул ответ в неожиданном формате.");
+                }
+                if (response.Content.Headers.ContentLength.HasValue && response.Content.Headers.ContentLength.Value > MaxResponseCharacters)
+                {
+                    throw new InvalidDataException("Ответ сервиса превышает допустимый размер.");
+                }
+
+                string json = await ReadLimitedStringAsync(response.Content, cancellationToken);
+                T value = JsonConvert.DeserializeObject<T>(json, JsonSettings);
+                if (value == null)
+                {
+                    throw new InvalidDataException("Сервис вернул пустой ответ.");
+                }
+                return value;
+            }
+        }
+
+        private static async Task<string> ReadLimitedStringAsync(HttpContent content, CancellationToken cancellationToken)
+        {
+            using (Stream stream = await content.ReadAsStreamAsync())
+            using (var reader = new StreamReader(stream, Encoding.UTF8, true, 4096, false))
+            {
+                var builder = new StringBuilder();
+                var buffer = new char[4096];
+                int read;
+                while ((read = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (builder.Length + read > MaxResponseCharacters)
                     {
-                        currency.Market_cap_string=currency.Market_cap.ToString("#,#", CultureInfo.InvariantCulture);
-                        currency.Total_volume_string=currency.Total_volume.ToString("#,#", CultureInfo.InvariantCulture);
+                        throw new InvalidDataException("Ответ сервиса превышает допустимый размер.");
                     }
-                    return crypts;
+                    builder.Append(buffer, 0, read);
                 }
-                //Якщо запрос не був успішний ми виводимо код відповіді HTTP
-                else
-                {
-
-                    return null;
-                }
+                return builder.ToString();
             }
         }
 
-        /*Цей метод використвується для  конвертації валюти */
-        public static async Task<decimal> ConvertCrypt(string currentyFromTransfer, string currentyWhichTransfer){
-            using (HttpClient client = new HttpClient()){
-                client.DefaultRequestHeaders.Add("User-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                //Запрос на виявлення ціни на обрану валюту за обрану валюту
-                string apiurl = $"{ApiBaseUrl}/coins/markets?vs_currency={currentyWhichTransfer}&ids={currentyFromTransfer}";
-
-                HttpResponseMessage response = await client.GetAsync(apiurl);
-                if (response.IsSuccessStatusCode){
-                    //Якщо запрос успішний ми десералізуємо JSON формат у коллекцію об'єктів Crypt
-                    string JsonResponse = await response.Content.ReadAsStringAsync();
-                    List<TestAssignment.Data.Currency> currencies = JsonConvert.DeserializeObject<List<TestAssignment.Data.Currency>>(JsonResponse);
-                    // в цьому List є тільки один елемент
-                    Currency result = currencies[0];
-                    return result.Current_price;
-                }
-                else{
-                    return 0;
-                }
-            }
-        }
-        public static async Task<PriceData> GetHistoryPriceForOneDay(string id)
+        private static void ValidateCoinId(string value)
         {
-            using (HttpClient client = new HttpClient())
+            if (string.IsNullOrWhiteSpace(value) || !CoinIdPattern.IsMatch(value))
             {
-                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                string apiUrl = $"{ApiBaseUrl}/coins/{id}/market_chart?vs_currency=usd&days=1";
-                HttpResponseMessage response = await client.GetAsync(apiUrl);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    string jsonResponse = await response.Content.ReadAsStringAsync();
-                    PriceData data = JsonConvert.DeserializeObject<PriceData>(jsonResponse);
-                    foreach (List<object> price in data.Prices)
-                    {
-                        long unixTime = System.Convert.ToInt64(price[0]);
-                        decimal currencyPrice = System.Convert.ToDecimal(price[1]);
-                        DateTime dateTime = DateTimeOffset.FromUnixTimeMilliseconds(unixTime).DateTime;
-                        
-                    }
-                    return data;
-                }
-                else
-                {
-                    return null;
-                }
+                throw new ArgumentException("Некорректный идентификатор криптовалюты.", nameof(value));
             }
         }
-        //Цей метод використвується для отримання усіх криптовалют
-        public static async Task<ObservableCollection<Currency>> GetAllCrypt()
+
+        private static void ValidateCurrencyCode(string value)
         {
-            using (HttpClient client = new HttpClient())
+            if (string.IsNullOrWhiteSpace(value) || !CurrencyCodePattern.IsMatch(value))
             {
-                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                string apiurl = $"{ApiBaseUrl}/coins/markets?vs_currency=usd&ids=&";
-                HttpResponseMessage response = await client.GetAsync(apiurl);
-                if (response.IsSuccessStatusCode)
-                {
-                    string jsonResponse = await response.Content.ReadAsStringAsync();
-                    ObservableCollection<Currency> crypts = JsonConvert.DeserializeObject<ObservableCollection<Currency>>(jsonResponse);
-                    return crypts;
-                }
-                else
-                {
-                    return null;
-                }
-            }
-        }
-        public static async Task<decimal> GetPriceChange(string id)
-        {
-            using (HttpClient client = new HttpClient())
-            {
-                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-                string apiUrl = $"{ApiBaseUrl}/coins/{id}?localization=false&tickers=true&market_data=true&community_data=false&developer_data=false&sparkline=false";
-                HttpResponseMessage response = await client.GetAsync(apiUrl);
-                if (response.IsSuccessStatusCode)
-                {
-                    string jsonResponse = await response.Content.ReadAsStringAsync();
-
-
-                    dynamic data = JsonConvert.DeserializeObject(jsonResponse);
-
-                    Console.WriteLine(data.id);
-                    decimal priceChangePercentage24h = data.market_data.price_change_percentage_24h;
-                    return priceChangePercentage24h;
-                }
-                else
-                {
-                    return -999;
-                }
+                throw new ArgumentException("Некорректный код валюты.", nameof(value));
             }
         }
     }

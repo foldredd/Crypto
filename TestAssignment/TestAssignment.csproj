@@ -122,7 +122,7 @@
     <Compile Include="Convert.xaml.cs">
       <DependentUpon>Convert.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Converter\PriceChangePercentageColorConverter .cs" />
+    <Compile Include="Converter\PriceChangePercentageColorConverter.cs" />
     <Compile Include="Data\Crypt.cs" />
     <Compile Include="Data\CryptoData.cs" />
     <Compile Include="Data\Currency.cs" />
@@ -181,10 +181,7 @@
       <Version>6.2.14</Version>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json">
-      <Version>13.0.3</Version>
-    </PackageReference>
-    <PackageReference Include="WinRTXamlToolkit.Controls.DataVisualization.UWP">
-      <Version>2.3.0</Version>
+      <Version>13.0.4</Version>
     </PackageReference>
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">

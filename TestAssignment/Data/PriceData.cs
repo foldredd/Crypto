@@ -1,13 +1,11 @@
-﻿using System;
+using Newtonsoft.Json;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace TestAssignment.Data
 {
     public class PriceData
     {
-        public List<List<object>> Prices { get; set; }
+        [JsonProperty("prices")]
+        public List<List<double>> Prices { get; set; } = new List<List<double>>();
     }
 }

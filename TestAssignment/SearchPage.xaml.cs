@@ -1,105 +1,110 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading;
 using System.Threading.Tasks;
 using TestAssignment.Data;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
-
-// Документацию по шаблону элемента "Пустая страница" см. по адресу https://go.microsoft.com/fwlink/?LinkId=234238
 
 namespace TestAssignment
 {
-    /// <summary>
-    /// Пустая страница, которую можно использовать саму по себе или для перехода внутри фрейма.
-    /// </summary>
     public sealed partial class SearchPage : Page
     {
-        private ObservableCollection<Currency> crypts { get; set; }
-        public ObservableCollection<Currency> CryptodataListProperty
+        private ObservableCollection<Currency> allCurrencies = new ObservableCollection<Currency>();
+        private CancellationTokenSource cancellation;
+        private bool openingDetails;
+        public ObservableCollection<Currency> Results { get; } = new ObservableCollection<Currency>();
+
+        public SearchPage()
         {
-            get { return (ObservableCollection<Currency>)GetValue(MyCryptsProperty); }
-            set { SetValue(MyCryptsProperty, value); }
+            InitializeComponent();
+            DataContext = this;
         }
 
-        public static readonly DependencyProperty MyCryptsProperty =
-           DependencyProperty.Register("CryptodataListProperty", typeof(ObservableCollection<Currency>), typeof(SearchPage), new PropertyMetadata(null));
-        public SearchPage(){
-            this.InitializeComponent();
-            this.AllCrypt();
-            this.DataContext = this;
-        }
-        private async Task AllCrypt()
+        protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
-            await AsyncCryptList();
+            base.OnNavigatedTo(e);
+            await LoadAsync();
         }
-        public async Task AsyncCryptList()
+
+        protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
-            await Task.Run(async () => {
-                crypts = new ObservableCollection<Currency>(await CryptoData.GetAllCrypt());
+            cancellation?.Cancel();
+            base.OnNavigatedFrom(e);
+        }
 
-                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
-                {
-                    SetValue(MyCryptsProperty, crypts);
-                });
-            });
-        }
-        private void button_Click(object sender, RoutedEventArgs e){
-            Frame.Navigate(typeof(MainPage));
-        }
-       
-        private void go_Convert(object sender, RoutedEventArgs e){
-            Frame.Navigate(typeof(Convert));
-        }
-        private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e){
-            string searchText = SearchTextBox.Text.Trim().ToLower();
-
-            if (!string.IsNullOrEmpty(searchText))
+        private async Task LoadAsync()
+        {
+            cancellation?.Cancel();
+            cancellation = new CancellationTokenSource();
+            LoadingPanel.Visibility = Visibility.Visible;
+            ErrorPanel.Visibility = Visibility.Collapsed;
+            EmptyPanel.Visibility = Visibility.Collapsed;
+            ResultsList.Visibility = Visibility.Collapsed;
+            try
             {
-                
-                var filteredList = crypts.Where(currency => currency.Name.ToLower().Contains(searchText)).ToList();
-
-               
-                CryptodataListProperty = new ObservableCollection<Currency>(filteredList);
+                allCurrencies = await CryptoData.GetAllCryptAsync(cancellation.Token);
+                ApplyFilter();
+                ResultsList.Visibility = Visibility.Visible;
             }
-            else
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
             {
-                
-                CryptodataListProperty = new ObservableCollection<Currency>(crypts);
+                ErrorText.Text = MainPage.FriendlyError(ex);
+                ErrorPanel.Visibility = Visibility.Visible;
             }
+            finally { LoadingPanel.Visibility = Visibility.Collapsed; }
         }
-        private async void ListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+
+        private void SearchChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+
+        private void ApplyFilter()
         {
-            var listView = sender as ListView;
-            var selectedItem = listView.SelectedItem as Currency;
-            if (selectedItem != null)
+            string query = (SearchBox?.Text ?? string.Empty).Trim();
+            var filtered = string.IsNullOrEmpty(query)
+                ? allCurrencies
+                : new ObservableCollection<Currency>(allCurrencies.Where(item =>
+                    (item.Name ?? string.Empty).IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
+                    (item.Symbol ?? string.Empty).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0));
+            Results.Clear();
+            foreach (Currency item in filtered) Results.Add(item);
+            EmptyPanel.Visibility = Results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private async void CurrencySelected(object sender, SelectionChangedEventArgs e)
+        {
+            var selected = ResultsList.SelectedItem as Currency;
+            if (selected == null || openingDetails) return;
+            openingDetails = true;
+            ResultsList.IsEnabled = false;
+            try
             {
-                var Id = selectedItem.Id;
-                var marketCapRank = selectedItem.Market_cap_rank;
-                var name = selectedItem.Name;
-                var symbol = selectedItem.Symbol;
-                var currentPrice = selectedItem.Current_price;
-                var totalVolume = selectedItem.Total_volume;
-                var marketCap = selectedItem.Market_cap;
-                var image = selectedItem.Image;
-                decimal priceChange = await CryptoData.GetPriceChange(Id);
-                PriceData priceData = new PriceData();
-                priceData = await CryptoData.GetHistoryPriceForOneDay(Id);
-                Crypt crypt = new Crypt(Id, marketCapRank, name, symbol, currentPrice, totalVolume, marketCap, image,priceChange, priceData);
-
-
-                Frame.Navigate(typeof(СurrencyPage), crypt);
+                var changeTask = CryptoData.GetPriceChangeAsync(selected.Id, cancellation.Token);
+                var historyTask = CryptoData.GetHistoryPriceForOneDayAsync(selected.Id, cancellation.Token);
+                await Task.WhenAll(changeTask, historyTask);
+                Frame.Navigate(typeof(СurrencyPage), new Crypt(selected.Id, selected.Market_cap_rank, selected.Name,
+                    selected.Symbol, selected.Current_price, selected.Total_volume, selected.Market_cap,
+                    selected.Image, changeTask.Result, historyTask.Result));
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                ErrorText.Text = MainPage.FriendlyError(ex);
+                ErrorPanel.Visibility = Visibility.Visible;
+                ResultsList.Visibility = Visibility.Collapsed;
+            }
+            finally
+            {
+                ResultsList.SelectedItem = null;
+                ResultsList.IsEnabled = true;
+                openingDetails = false;
             }
         }
+
+        private async void RetryClick(object sender, RoutedEventArgs e) => await LoadAsync();
+        private void GoHome(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(MainPage));
+        private void GoConvert(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(Convert));
     }
 }
