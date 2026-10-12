@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Актуальные цены, динамика и конвертер криптовалют">
+  <meta name="theme-color" content="#080d18">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.coingecko.com; img-src 'self' https://coin-images.coingecko.com data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Crypto — рынок без лишнего шума</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Crypto — на главную">
+      <span class="brand-mark">₿</span>
+      <span>Crypto</span>
+    </a>
+    <nav class="nav" aria-label="Основная навигация">
+      <a href="#market">Рынок</a>
+      <a href="#converter">Конвертер</a>
+      <a class="github-link" href="https://github.com/foldredd/Crypto" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="eyebrow"><span class="live-dot"></span> Данные обновляются в реальном времени</div>
+      <h1 id="hero-title">Крипторынок.<br><span>Чётко и по делу.</span></h1>
+      <p class="hero-copy">Следите за ценами, сравнивайте активы и рассчитывайте стоимость — в одном спокойном интерфейсе.</p>
+      <div class="hero-actions">
+        <a class="button button-primary" href="#market">Смотреть рынок</a>
+        <a class="button button-secondary" href="#converter">Рассчитать стоимость</a>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="Состояние рынка">
+      <article class="metric-card">
+        <span>Капитализация рынка</span>
+        <strong id="global-cap">—</strong>
+        <small id="global-change">Загрузка…</small>
+      </article>
+      <article class="metric-card">
+        <span>Объём за 24 часа</span>
+        <strong id="global-volume">—</strong>
+        <small>По данным CoinGecko</small>
+      </article>
+      <article class="metric-card">
+        <span>Доминирование BTC</span>
+        <strong id="btc-dominance">—</strong>
+        <small>Доля общей капитализации</small>
+      </article>
+    </section>
+
+    <section class="market-section" id="market" aria-labelledby="market-title">
+      <div class="section-heading">
+        <div>
+          <span class="section-kicker">Обзор</span>
+          <h2 id="market-title">Лидеры рынка</h2>
+        </div>
+        <button class="refresh-button" id="refresh-button" type="button" aria-label="Обновить данные">
+          <span aria-hidden="true">↻</span> Обновить
+        </button>
+      </div>
+
+      <div class="market-panel">
+        <div class="market-tools">
+          <label class="search-field">
+            <span class="sr-only">Поиск монеты</span>
+            <span aria-hidden="true">⌕</span>
+            <input id="search-input" type="search" placeholder="Название или тикер" autocomplete="off">
+          </label>
+          <span class="result-count" id="result-count">Загрузка данных…</span>
+        </div>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="rank-column">#</th>
+                <th><button class="sort-button active" type="button" data-sort="rank">Актив</button></th>
+                <th class="number-column"><button class="sort-button" type="button" data-sort="price">Цена</button></th>
+                <th class="number-column"><button class="sort-button" type="button" data-sort="change">24 часа</button></th>
+                <th class="number-column optional-column"><button class="sort-button" type="button" data-sort="volume">Объём</button></th>
+                <th class="number-column optional-column"><button class="sort-button" type="button" data-sort="cap">Капитализация</button></th>
+              </tr>
+            </thead>
+            <tbody id="market-body"></tbody>
+          </table>
+        </div>
+
+        <div class="state-panel" id="market-state" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Получаем свежие данные рынка…</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="converter-section" id="converter" aria-labelledby="converter-title">
+      <div class="converter-copy">
+        <span class="section-kicker">Конвертер</span>
+        <h2 id="converter-title">Посчитайте<br>за пару секунд.</h2>
+        <p>Выберите актив и валюту — мы возьмём актуальный курс и покажем результат.</p>
+      </div>
+      <form class="converter-card" id="converter-form">
+        <label>
+          <span>Количество</span>
+          <input id="amount-input" type="text" inputmode="decimal" value="1" maxlength="20" required>
+        </label>
+        <div class="converter-grid">
+          <label>
+            <span>Криптовалюта</span>
+            <select id="coin-select" required><option value="">Загрузка…</option></select>
+          </label>
+          <label>
+            <span>Валюта</span>
+            <select id="fiat-select" required>
+              <option value="usd">USD — Доллар США</option>
+              <option value="eur">EUR — Евро</option>
+              <option value="gbp">GBP — Фунт</option>
+              <option value="uah">UAH — Гривна</option>
+            </select>
+          </label>
+        </div>
+        <div class="conversion-result" aria-live="polite">
+          <span>Результат</span>
+          <strong id="conversion-result">—</strong>
+          <small id="conversion-rate">Выберите валюты и нажмите кнопку</small>
+        </div>
+        <button class="button button-primary full-width" id="convert-button" type="submit">Рассчитать</button>
+        <p class="form-error" id="converter-error" role="alert"></p>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    <a class="brand footer-brand" href="#top"><span class="brand-mark">₿</span><span>Crypto</span></a>
+    <p>Рыночные данные предоставлены CoinGecko. Не является финансовой рекомендацией.</p>
+    <span id="updated-time">Ожидание данных</span>
+  </footer>
+
+  <dialog class="coin-dialog" id="coin-dialog" aria-labelledby="dialog-title">
+    <button class="dialog-close" id="dialog-close" type="button" aria-label="Закрыть">×</button>
+    <div class="dialog-header">
+      <img id="dialog-image" alt="" width="52" height="52">
+      <div>
+        <h2 id="dialog-title">—</h2>
+        <span id="dialog-symbol">—</span>
+      </div>
+      <div class="dialog-price">
+        <strong id="dialog-price">—</strong>
+        <span id="dialog-change">—</span>
+      </div>
+    </div>
+    <div class="chart-heading">
+      <span>Цена за 24 часа</span>
+      <small>USD</small>
+    </div>
+    <div class="chart-wrap" id="chart-wrap" aria-live="polite">
+      <svg id="price-chart" viewBox="0 0 760 280" role="img" aria-label="График цены за последние 24 часа">
+        <line x1="0" y1="70" x2="760" y2="70"></line>
+        <line x1="0" y1="140" x2="760" y2="140"></line>
+        <line x1="0" y1="210" x2="760" y2="210"></line>
+        <polyline id="chart-line" points=""></polyline>
+      </svg>
+      <div class="chart-loading" id="chart-loading"><div class="spinner"></div><span>Строим график…</span></div>
+    </div>
+    <div class="dialog-stats">
+      <div><span>Капитализация</span><strong id="dialog-cap">—</strong></div>
+      <div><span>Объём за 24 часа</span><strong id="dialog-volume">—</strong></div>
+      <div><span>Место</span><strong id="dialog-rank">—</strong></div>
+    </div>
+  </dialog>
+
+  <noscript><div class="noscript">Для работы приложения включите JavaScript.</div></noscript>
+  <script src="app.js" defer></script>
+</body>
+</html>
